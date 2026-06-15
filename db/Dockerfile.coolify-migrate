@@ -1,4 +1,6 @@
 FROM postgres:18
 
 COPY init /scripts
-RUN chmod +x /scripts/db-bootstrap.sh
+COPY coolify-db-bootstrap.sh /scripts/coolify-db-bootstrap.sh
+RUN sed -i 's/CREATE SCHEMA "auth";/CREATE SCHEMA IF NOT EXISTS "auth";/' /scripts/migrations/001_migration.sql \
+  && chmod +x /scripts/db-bootstrap.sh /scripts/coolify-db-bootstrap.sh

@@ -45,7 +45,6 @@ services:
     environment:
       POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
     volumes:
-      - postgres-init:/target/postgres-init
       - garage-config:/target/garage-config
       - baikal-init:/target/baikal-init
       - dav-config:/target/dav-config
@@ -178,7 +177,6 @@ services:
       retries: 30
     volumes:
       - postgres-data:/var/lib/postgresql
-      - postgres-init:/docker-entrypoint-initdb.d
     command: >
       postgres
       -c shared_buffers=256MB
@@ -198,7 +196,7 @@ services:
       PGUSER: postgres
       PGPASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
       PGDATABASE: postgres
-    entrypoint: [ "/bin/bash", "/scripts/db-bootstrap.sh" ]
+    entrypoint: [ "/bin/bash", "/scripts/coolify-db-bootstrap.sh" ]
     exclude_from_hc: true
 
 volumes:
@@ -210,6 +208,5 @@ volumes:
   garage-data:
   garage-meta:
   postgres-data:
-  postgres-init:
   redis-data:
   typesense-data:
