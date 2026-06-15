@@ -1,6 +1,6 @@
 x-kurrier-env: &kurrier-env
   WEB_PORT: "3000"
-  WEB_URL: ${SERVICE_URL_KURRIER_3000}
+  WEB_URL: ${SERVICE_URL_WEB_3000}
   NITRO_PORT: "3001"
   HOST: 0.0.0.0
   POSTGRES_USER: postgres
@@ -42,7 +42,7 @@ services:
     restart: "no"
     working_dir: /work
     volumes:
-      - .:/work
+      - ./db:/work
     entrypoint:
       - /bin/sh
       - -ec
@@ -78,7 +78,7 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *kurrier-env
-      SERVICE_URL_KURRIER_3000: ${SERVICE_URL_KURRIER_3000}
+      SERVICE_URL_WEB_3000: ${SERVICE_URL_WEB_3000}
 
   worker:
     image: ghcr.io/kurrier-org/kurrier-worker:v3.0.10
@@ -110,7 +110,7 @@ services:
       timeout: 1s
       retries: 30
     volumes:
-      - ./redis_data:/data
+      - ./db/redis_data:/data
 
   dav:
     image: ckulka/baikal:nginx
@@ -121,8 +121,8 @@ services:
       baikal-postgres:
         condition: service_started
     volumes:
-      - ./dav_config:/var/www/baikal/config
-      - ./dav_data:/var/www/baikal/Specific
+      - ./db/dav_config:/var/www/baikal/config
+      - ./db/dav_data:/var/www/baikal/Specific
 
   typesense:
     image: typesense/typesense:29.0
@@ -134,7 +134,7 @@ services:
     environment:
       TYPESENSE_API_KEY: ${SERVICE_PASSWORD_64_TYPESENSE}
     volumes:
-      - ./typesense-data:/data
+      - ./db/typesense-data:/data
 
   garage:
     image: dxflrs/garage:v2.3.0
@@ -148,9 +148,9 @@ services:
       GARAGE_DEFAULT_SECRET_KEY: ${SERVICE_PASSWORD_64_GARAGE}
       GARAGE_DEFAULT_BUCKET: kurrier-store
     volumes:
-      - ./garage/garage.toml:/etc/garage.toml
-      - ./garage/data:/var/lib/garage/data
-      - ./garage/meta:/var/lib/garage/meta
+      - ./db/garage/garage.toml:/etc/garage.toml
+      - ./db/garage/data:/var/lib/garage/data
+      - ./db/garage/meta:/var/lib/garage/meta
     command: >
       /garage server
       --single-node
@@ -167,8 +167,8 @@ services:
       POSTGRES_PASSWORD: strong_baikal_password
       POSTGRES_DB: baikal
     volumes:
-      - ./baikal-data:/var/lib/postgresql
-      - ./baikal-init:/docker-entrypoint-initdb.d
+      - ./db/baikal-data:/var/lib/postgresql
+      - ./db/baikal-init:/docker-entrypoint-initdb.d
     command: >
       postgres
       -c shared_buffers=128MB
@@ -191,8 +191,8 @@ services:
       timeout: 2s
       retries: 30
     volumes:
-      - ./data:/var/lib/postgresql
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./db/data:/var/lib/postgresql
+      - ./db/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     command: >
       postgres
       -c shared_buffers=256MB
@@ -211,6 +211,6 @@ services:
       PGPASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
       PGDATABASE: postgres
     volumes:
-      - ./init:/scripts
+      - ./db/init:/scripts
     entrypoint: [ "/bin/bash", "/scripts/db-bootstrap.sh" ]
     exclude_from_hc: true
