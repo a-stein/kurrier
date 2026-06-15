@@ -283,7 +283,7 @@ export async function createSessionForUser(userId: string) {
 	await setAuthToken(token);
 }
 
-export async function getWorkspaceRedirectUrl(user: typeof users.$inferSelect) {
+export async function getWorkspaceRedirectUrl(user: Pick<typeof users.$inferSelect, "id">) {
 	const [workspace] = await db
 		.select()
 		.from(workspaces)
@@ -293,7 +293,7 @@ export async function getWorkspaceRedirectUrl(user: typeof users.$inferSelect) {
 		return "/auth/login";
 	}
 
-	await updateWorkSpaceContext(workspace.publicId, workspace.id, user);
+	await updateWorkSpaceContext(workspace.publicId, workspace.id);
 
 	if (workspace.defaultIdentityId) {
 		const [defaultIdentity] = await db

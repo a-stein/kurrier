@@ -1,4 +1,4 @@
-import { isSignedIn } from "@/lib/actions/auth";
+import { getWorkspaceRedirectUrl, isSignedIn } from "@/lib/actions/auth";
 import { redirect } from "next/navigation";
 
 export default async function DashboardLayout({
@@ -9,7 +9,7 @@ export default async function DashboardLayout({
 	const user = await isSignedIn();
 
 	if (user) {
-		redirect("/dashboard/platform/overview");
+		redirect(await getWorkspaceRedirectUrl(user));
 	}
 
 	return <>{children}</>;
