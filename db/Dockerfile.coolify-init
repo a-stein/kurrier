@@ -1,0 +1,5 @@
+FROM alpine:3.22
+
+COPY init /seed/init
+COPY coolify-init.sh /seed/coolify-init.sh
+RUN chmod +x /seed/coolify-init.sh

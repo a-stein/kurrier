@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+
+cat > /target/postgres-init/init.sql <<SQL
+DO '
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = ''kurrier'') THEN
+    CREATE ROLE kurrier LOGIN PASSWORD ''${POSTGRES_PASSWORD}'';
+  END IF;
+END
+';
+CREATE SCHEMA IF NOT EXISTS auth;
+
+ALTER SCHEMA public OWNER TO kurrier;
+ALTER SCHEMA auth OWNER TO kurrier;
+GRANT ALL ON SCHEMA public TO kurrier;
+GRANT ALL ON SCHEMA auth TO kurrier;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO kurrier;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA auth TO kurrier;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO kurrier;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA auth TO kurrier;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL ON TABLES TO kurrier;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL ON SEQUENCES TO kurrier;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA auth
+GRANT ALL ON TABLES TO kurrier;
+ALTER DEFAULT PRIVILEGES IN SCHEMA auth
+GRANT ALL ON SEQUENCES TO kurrier;
+SQL
+
+cp /seed/init/garage/garage.toml /target/garage-config/garage.toml
+cp /seed/init/baikal-init/baikal.sql /target/baikal-init/baikal.sql
+cp /seed/init/dav_config/.htaccess /target/dav-config/.htaccess
+cp /seed/init/dav_config/baikal.yaml /target/dav-config/baikal.yaml

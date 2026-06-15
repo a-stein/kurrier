@@ -1,6 +1,6 @@
 x-kurrier-env: &kurrier-env
   WEB_PORT: "3000"
-  WEB_URL: ${SERVICE_URL_WEB_3000}
+  WEB_URL: ${SERVICE_URL_WEB_3000:-${SERVICE_URL_WEB:-}}
   NITRO_PORT: "3001"
   HOST: 0.0.0.0
   POSTGRES_USER: postgres
@@ -38,32 +38,18 @@ x-kurrier-env: &kurrier-env
 
 services:
   init-files:
-    image: alpine:3.22
+    build:
+      context: ./db
+      dockerfile: Dockerfile.coolify-init
     restart: "no"
-    working_dir: /work
+    environment:
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
     volumes:
-      - ./db:/work
-    entrypoint:
-      - /bin/sh
-      - -ec
-      - |
-        mkdir -p \
-          postgres \
-          garage/data \
-          garage/meta \
-          baikal-init \
-          baikal-data \
-          dav_config \
-          dav_data \
-          redis_data \
-          typesense-data \
-          data
-
-        [ -f postgres/init.sql ] || cp init/init.sql postgres/init.sql
-        [ -f garage/garage.toml ] || cp init/garage/garage.toml garage/garage.toml
-        [ -f baikal-init/baikal.sql ] || cp init/baikal-init/baikal.sql baikal-init/baikal.sql
-        [ -f dav_config/.htaccess ] || cp init/dav_config/.htaccess dav_config/.htaccess
-        [ -f dav_config/baikal.yaml ] || cp init/dav_config/baikal.yaml dav_config/baikal.yaml
+      - postgres-init:/target/postgres-init
+      - garage-config:/target/garage-config
+      - baikal-init:/target/baikal-init
+      - dav-config:/target/dav-config
+    entrypoint: [ "/bin/sh", "/seed/coolify-init.sh" ]
     exclude_from_hc: true
 
   web:
@@ -78,7 +64,7 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *kurrier-env
-      SERVICE_URL_WEB_3000: ${SERVICE_URL_WEB_3000}
+      SERVICE_URL_WEB_3000: ${SERVICE_URL_WEB_3000:-}
 
   worker:
     image: ghcr.io/kurrier-org/kurrier-worker:v3.0.10
@@ -110,7 +96,7 @@ services:
       timeout: 1s
       retries: 30
     volumes:
-      - ./db/redis_data:/data
+      - redis-data:/data
 
   dav:
     image: ckulka/baikal:nginx
@@ -121,8 +107,8 @@ services:
       baikal-postgres:
         condition: service_started
     volumes:
-      - ./db/dav_config:/var/www/baikal/config
-      - ./db/dav_data:/var/www/baikal/Specific
+      - dav-config:/var/www/baikal/config
+      - dav-data:/var/www/baikal/Specific
 
   typesense:
     image: typesense/typesense:29.0
@@ -134,7 +120,7 @@ services:
     environment:
       TYPESENSE_API_KEY: ${SERVICE_PASSWORD_64_TYPESENSE}
     volumes:
-      - ./db/typesense-data:/data
+      - typesense-data:/data
 
   garage:
     image: dxflrs/garage:v2.3.0
@@ -148,11 +134,11 @@ services:
       GARAGE_DEFAULT_SECRET_KEY: ${SERVICE_PASSWORD_64_GARAGE}
       GARAGE_DEFAULT_BUCKET: kurrier-store
     volumes:
-      - ./db/garage/garage.toml:/etc/garage.toml
-      - ./db/garage/data:/var/lib/garage/data
-      - ./db/garage/meta:/var/lib/garage/meta
+      - garage-config:/etc/garage
+      - garage-data:/var/lib/garage/data
+      - garage-meta:/var/lib/garage/meta
     command: >
-      /garage server
+      /garage -c /etc/garage/garage.toml server
       --single-node
       --default-bucket
 
@@ -167,8 +153,8 @@ services:
       POSTGRES_PASSWORD: strong_baikal_password
       POSTGRES_DB: baikal
     volumes:
-      - ./db/baikal-data:/var/lib/postgresql
-      - ./db/baikal-init:/docker-entrypoint-initdb.d
+      - baikal-data:/var/lib/postgresql
+      - baikal-init:/docker-entrypoint-initdb.d
     command: >
       postgres
       -c shared_buffers=128MB
@@ -191,8 +177,8 @@ services:
       timeout: 2s
       retries: 30
     volumes:
-      - ./db/data:/var/lib/postgresql
-      - ./db/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres-data:/var/lib/postgresql
+      - postgres-init:/docker-entrypoint-initdb.d
     command: >
       postgres
       -c shared_buffers=256MB
@@ -200,7 +186,9 @@ services:
       -c work_mem=4MB
 
   migrate:
-    image: postgres:18
+    build:
+      context: ./db
+      dockerfile: Dockerfile.coolify-migrate
     restart: "no"
     depends_on:
       postgres:
@@ -210,7 +198,18 @@ services:
       PGUSER: postgres
       PGPASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
       PGDATABASE: postgres
-    volumes:
-      - ./db/init:/scripts
     entrypoint: [ "/bin/bash", "/scripts/db-bootstrap.sh" ]
     exclude_from_hc: true
+
+volumes:
+  baikal-data:
+  baikal-init:
+  dav-config:
+  dav-data:
+  garage-config:
+  garage-data:
+  garage-meta:
+  postgres-data:
+  postgres-init:
+  redis-data:
+  typesense-data:
