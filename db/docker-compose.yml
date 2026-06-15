@@ -1,44 +1,125 @@
-version: "3.9"
+x-kurrier-env: &kurrier-env
+  WEB_PORT: "3000"
+  WEB_URL: ${SERVICE_URL_KURRIER_3000}
+  NITRO_PORT: "3001"
+  HOST: 0.0.0.0
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+  POSTGRES_DB: postgres
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  DATABASE_URL: postgresql://postgres:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/postgres
+  DATABASE_RLS_URL: postgresql://kurrier:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/postgres
+  REDIS_PASSWORD: ${SERVICE_PASSWORD_64_REDIS}
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  TYPESENSE_API_KEY: ${SERVICE_PASSWORD_64_TYPESENSE}
+  TYPESENSE_PORT: "8108"
+  TYPESENSE_PROTOCOL: http
+  TYPESENSE_HOST: typesense
+  JWT_SECRET: ${SERVICE_PASSWORD_64_JWT}
+  APP_SECRET_ENCRYPTION_KEY: ${SERVICE_REALBASE64_32_APP_SECRET}
+  SEARCH_REBUILD_ON_BOOT: "false"
+  DAV_URL: http://dav:80
+  DAV_DATABASE_URL: postgresql://baikal:strong_baikal_password@baikal-postgres:5432/baikal
+  WORKER_URL: http://worker:3001
+  GARAGE_ACCESS_KEY: ${SERVICE_USER_GARAGE}
+  GARAGE_SECRET_KEY: ${SERVICE_PASSWORD_64_GARAGE}
+  GARAGE_BUCKET: kurrier-store
+  GARAGE_RPC_SECRET: ${SERVICE_HEX_64_GARAGE}
+  S3_ENDPOINT: http://garage:3900
+  S3_ACCESS_KEY: ${SERVICE_USER_GARAGE}
+  S3_SECRET_KEY: ${SERVICE_PASSWORD_64_GARAGE}
+  S3_BUCKET: kurrier-store
+  S3_REGION: garage
+  S3_FORCE_PATH_STYLE: "true"
+  OIDC_GOOGLE_CLIENT_ID: ${OIDC_GOOGLE_CLIENT_ID:-}
+  OIDC_GOOGLE_CLIENT_SECRET: ${OIDC_GOOGLE_CLIENT_SECRET:-}
 
 services:
+  init-files:
+    image: alpine:3.22
+    restart: "no"
+    working_dir: /work
+    volumes:
+      - .:/work
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mkdir -p \
+          postgres \
+          garage/data \
+          garage/meta \
+          baikal-init \
+          baikal-data \
+          dav_config \
+          dav_data \
+          redis_data \
+          typesense-data \
+          data
+
+        [ -f postgres/init.sql ] || cp init/init.sql postgres/init.sql
+        [ -f garage/garage.toml ] || cp init/garage/garage.toml garage/garage.toml
+        [ -f baikal-init/baikal.sql ] || cp init/baikal-init/baikal.sql baikal-init/baikal.sql
+        [ -f dav_config/.htaccess ] || cp init/dav_config/.htaccess dav_config/.htaccess
+        [ -f dav_config/baikal.yaml ] || cp init/dav_config/baikal.yaml dav_config/baikal.yaml
+    exclude_from_hc: true
+
   web:
     image: ghcr.io/kurrier-org/kurrier-web:v3.0.10
     restart: unless-stopped
-    env_file:
-      - .env
-    ports:
-      - "${WEB_PORT:-3000}:3000"
     depends_on:
+      init-files:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *kurrier-env
+      SERVICE_URL_KURRIER_3000: ${SERVICE_URL_KURRIER_3000}
+
   worker:
     image: ghcr.io/kurrier-org/kurrier-worker:v3.0.10
     restart: unless-stopped
-    env_file:
-      - .env
-    ports:
-      - "${NITRO_PORT:-3001}:3001"
     depends_on:
+      init-files:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *kurrier-env
+
   redis:
     image: redis:8.2.2
-    command: [ "redis-server", "--appendonly", "yes", "--stop-writes-on-bgsave-error","no", "--requirepass", "${REDIS_PASSWORD}" ]
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --stop-writes-on-bgsave-error
+      - "no"
+      - --requirepass
+      - ${SERVICE_PASSWORD_64_REDIS}
     healthcheck:
-      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "PING" ]
+      test: [ "CMD", "redis-cli", "-a", "${SERVICE_PASSWORD_64_REDIS}", "PING" ]
       interval: 2s
       timeout: 1s
       retries: 30
     volumes:
       - ./redis_data:/data
-    ports:
-      - ${REDIS_PORT}:${REDIS_PORT}
 
   dav:
     image: ckulka/baikal:nginx
     restart: always
-    ports:
-      - "5232:80"
+    depends_on:
+      init-files:
+        condition: service_completed_successfully
+      baikal-postgres:
+        condition: service_started
     volumes:
       - ./dav_config:/var/www/baikal/config
       - ./dav_data:/var/www/baikal/Specific
@@ -46,31 +127,26 @@ services:
   typesense:
     image: typesense/typesense:29.0
     restart: on-failure
-    ports:
-      - ${TYPESENSE_PORT}:${TYPESENSE_PORT}
-    volumes:
-      - ./typesense-data:/data
     command: >
       --data-dir /data
-      --api-key=${TYPESENSE_API_KEY}
+      --api-key=${SERVICE_PASSWORD_64_TYPESENSE}
       --enable-cors
     environment:
-      - TYPESENSE_API_KEY=${TYPESENSE_API_KEY}
+      TYPESENSE_API_KEY: ${SERVICE_PASSWORD_64_TYPESENSE}
+    volumes:
+      - ./typesense-data:/data
 
   garage:
     image: dxflrs/garage:v2.3.0
-    container_name: garage
     restart: unless-stopped
-    ports:
-      - "3900:3900"
-      - "3901:3901"
-      - "3902:3902"
-      - "3903:3903"
+    depends_on:
+      init-files:
+        condition: service_completed_successfully
     environment:
-      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
-      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
-      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_SECRET_KEY}
-      GARAGE_DEFAULT_BUCKET: ${GARAGE_BUCKET}
+      GARAGE_RPC_SECRET: ${SERVICE_HEX_64_GARAGE}
+      GARAGE_DEFAULT_ACCESS_KEY: ${SERVICE_USER_GARAGE}
+      GARAGE_DEFAULT_SECRET_KEY: ${SERVICE_PASSWORD_64_GARAGE}
+      GARAGE_DEFAULT_BUCKET: kurrier-store
     volumes:
       - ./garage/garage.toml:/etc/garage.toml
       - ./garage/data:/var/lib/garage/data
@@ -78,17 +154,18 @@ services:
     command: >
       /garage server
       --single-node
-      --default-bucket  
+      --default-bucket
 
   baikal-postgres:
     image: postgres:18
     restart: unless-stopped
+    depends_on:
+      init-files:
+        condition: service_completed_successfully
     environment:
       POSTGRES_USER: baikal
       POSTGRES_PASSWORD: strong_baikal_password
       POSTGRES_DB: baikal
-    ports:
-      - "5433:5432"
     volumes:
       - ./baikal-data:/var/lib/postgresql
       - ./baikal-init:/docker-entrypoint-initdb.d
@@ -100,19 +177,19 @@ services:
 
   postgres:
     image: postgres:18
-    container_name: app-postgres
     restart: unless-stopped
+    depends_on:
+      init-files:
+        condition: service_completed_successfully
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+      POSTGRES_DB: postgres
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
       interval: 2s
       timeout: 2s
       retries: 30
-    ports:
-      - "5432:5432"
     volumes:
       - ./data:/var/lib/postgresql
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -124,14 +201,16 @@ services:
 
   migrate:
     image: postgres:18
+    restart: "no"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       PGHOST: postgres
-      PGUSER: ${POSTGRES_USER}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: postgres
+      PGPASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+      PGDATABASE: postgres
     volumes:
       - ./init:/scripts
     entrypoint: [ "/bin/bash", "/scripts/db-bootstrap.sh" ]
-    restart: "no"
+    exclude_from_hc: true
